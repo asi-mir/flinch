@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kiln &amp; Co. Mugs (demo shop)</title>
+    <link rel="stylesheet" href="shop.css" />
+  </head>
+  <body>
+    <!-- A demo shop with usability problems built in on purpose. Nothing is sold and nothing is sent anywhere. -->
+    <header class="top">
+      <a class="brand" href="#shop">Kiln &amp; Co.</a>
+      <a class="basket" href="#checkout" id="basket-link">Basket (<span id="basket-count">0</span>)</a>
+    </header>
+
+    <main id="shop" class="page">
+      <h1>Hand-thrown mugs</h1>
+      <p class="sub">Made in small batches. Each one is a little different.</p>
+      <div class="grid" id="products"></div>
+    </main>
+
+    <main id="checkout" class="page" hidden>
+      <h1>Checkout</h1>
+      <p class="sub" id="basket-summary"></p>
+      <form id="details" novalidate>
+        <label for="name">Full name</label>
+        <input id="name" name="name" autocomplete="off" />
+
+        <label for="email">Email</label>
+        <input id="email" name="email" autocomplete="off" />
+
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" autocomplete="off" />
+
+        <label for="postcode">Postcode</label>
+        <input id="postcode" name="postcode" autocomplete="off" />
+
+        <fieldset>
+          <legend>Delivery</legend>
+          <label class="option"><input type="radio" name="delivery" value="standard" checked /> Standard, 5 to 8 working days (free)</label>
+          <a href="#" id="more-delivery" class="tiny">other options</a>
+          <div id="extra-delivery" hidden>
+            <label class="option"><input type="radio" name="delivery" value="tomorrow" /> Tomorrow ($6)</label>
+            <label class="option"><input type="radio" name="delivery" value="pickup" /> Pick up at the studio (free)</label>
+          </div>
+        </fieldset>
+
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+        <button type="submit" class="buy">Continue</button>
+      </form>
+    </main>
+
+    <main id="pay" class="page" hidden>
+      <h1>Review and pay</h1>
+      <table class="bill" id="bill"></table>
+      <button class="buy" id="pay-button">Pay now</button>
+      <p class="tiny">Demo shop: no payment is taken.</p>
+    </main>
+
+    <main id="done" class="page" hidden>
+      <h1>Order placed</h1>
+      <p class="sub" id="done-text"></p>
+    </main>
+
+    <div id="popup" class="popup" hidden>
+      <div class="popup-box">
+        <button id="popup-close" class="popup-close" aria-label="Close">x</button>
+        <h2>Get 5% off your next kiln day</h2>
+        <p>Join 12,000 mug people. We email a lot.</p>
+        <input placeholder="Your email" aria-label="Newsletter email" />
+        <button class="buy" id="popup-join">Join</button>
+      </div>
+    </div>
+
+    <script src="shop.js"></script>
+  </body>
+</html>
