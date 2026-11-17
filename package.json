@@ -1,0 +1,24 @@
+{
+  "name": "flinch",
+  "version": "0.1.0",
+  "description": "Usability testing that records how the tester's body reacts, next to the screen.",
+  "private": true,
+  "license": "MIT",
+  "author": "asi-mir",
+  "main": "src/main/main.js",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "start": "npm run build && electron .",
+    "preview": "npm run build && electron . --simulate",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
+    "@smartspectra/node-sdk": "^3.5.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "electron": "^45.3.4",
+    "esbuild": "^0.28.2"
+  }
+}

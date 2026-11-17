@@ -1,0 +1,34 @@
+# Secrets (keep .env.example)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Personal agent settings
+.claude/settings.local.json
+.claude/logs/
+.claude/worktrees/
+CLAUDE.local.md
+
+# Recordings and captured sessions: a face and body signals are personal data
+*.mp4
+*.mov
+*.webm
+/recordings/
+/sessions/
+data/private/
+
+# Node / Electron
+node_modules/
+dist/
+out/
+build/
+.vite/
+*.log
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
