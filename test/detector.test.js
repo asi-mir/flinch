@@ -58,6 +58,53 @@ test('face and pulse together make one strong moment with its events', () => {
   assert.strictEqual(m.url, 'https://shop.test/checkout');
 });
 
+test('a sad face counts, but not while typing', () => {
+  const s = calmSession();
+  for (const e of s.samples.expr) {
+    if ((e.t >= 50000 && e.t <= 53000) || (e.t >= 80000 && e.t <= 83000)) e.v = { neutral: 0.1, sad: 0.9 };
+  }
+  for (let t = 79000; t <= 84000; t += 1000) s.events.push({ t, type: 'typing', text: 'Email' });
+  const sad = detectMoments(s).moments.flatMap((m) => m.signals).filter((x) => x.label.startsWith('Face: sad'));
+  assert.strictEqual(sad.length, 1);
+  assert.ok(sad[0].onset >= 50000 && sad[0].onset < 53000);
+});
+
+test('a happy face is a positive moment of its own', () => {
+  const s = calmSession();
+  for (const e of s.samples.expr) {
+    if (e.t >= 60000 && e.t <= 62000) e.v = { neutral: 0.1, angry: 0.9 };
+    if (e.t >= 64000 && e.t <= 67000) e.v = { neutral: 0.1, happy: 0.9 };
+  }
+  const { moments } = detectMoments(s);
+  const tones = moments.map((m) => m.tone).sort();
+  assert.deepStrictEqual(tones, ['negative', 'positive']);
+  assert.match(moments.find((m) => m.tone === 'positive').signals[0].label, /^Face: happy/);
+});
+
+test('a face reaction counts when only the chest is out of view', () => {
+  const s = calmSession();
+  for (const e of s.samples.expr) if (e.t >= 70000 && e.t <= 73000) e.v = { neutral: 0.05, fear: 0.95 };
+  s.invalid.push({ start: 69000, end: 75000, reason: 'Place more of the chest in view.' });
+  const face = detectMoments(s).moments.flatMap((m) => m.signals).filter((x) => x.kind === 'expression');
+  assert.strictEqual(face.length, 1);
+  assert.match(face[0].label, /^Face: fear/);
+});
+
+test('a face that stays negative does not start a second hit later', () => {
+  const s = calmSession();
+  // Angry from 60 s to 61.5 s, a dip, then angry again from 62 s to 75 s without a break
+  // after the quiet period ends. Only the two real rises count, not a late restart.
+  for (const e of s.samples.expr) {
+    if ((e.t >= 60000 && e.t <= 61500) || (e.t >= 63000 && e.t <= 75000)) e.v = { neutral: 0.1, angry: 0.9 };
+  }
+  const onsets = detectMoments(s)
+    .moments.flatMap((m) => m.signals)
+    .filter((x) => x.kind === 'expression')
+    .map((x) => x.onset);
+  assert.strictEqual(onsets.length, 1);
+  assert.ok(onsets[0] >= 60000 && onsets[0] < 61500);
+});
+
 test('a breath hold is found', () => {
   const s = calmSession();
   for (const b of s.samples.breathTrace) if (b.t >= 50000 && b.t <= 58000) b.v = 0.01;
@@ -108,4 +155,40 @@ test('normalizeMetrics flattens a packet and scales expression scores', () => {
   assert.strictEqual(samples[0].t, 2000);
   assert.strictEqual(samples[1].t, 2100);
   assert.deepStrictEqual(samples[3].v, { angry: 0.6, neutral: 0.3 });
+});
+
+test('a short sad flicker is not a moment, a surprise is', () => {
+  const s = calmSession();
+  for (const e of s.samples.expr) {
+    if (e.t >= 50000 && e.t <= 51000) e.v = { neutral: 0.1, sad: 0.9 };
+    if (e.t >= 70000 && e.t <= 72500) e.v = { neutral: 0.01, surprise: 0.99 };
+  }
+  const labels = detectMoments(s).moments.flatMap((m) => m.signals).map((x) => x.label);
+  assert.ok(!labels.some((l) => l.startsWith('Face: sad')));
+  assert.ok(labels.some((l) => l.startsWith('Face: surprise')));
+});
+
+test('a slow breathing change does not join two separate face reactions', () => {
+  const s = calmSession();
+  for (const e of s.samples.expr) {
+    if (e.t >= 60000 && e.t <= 62000) e.v = { neutral: 0.1, angry: 0.9 };
+    if (e.t >= 75000 && e.t <= 77000) e.v = { neutral: 0.01, surprise: 0.99 };
+  }
+  // Breathing rate rises at 80 s; its 30 s window covers both face reactions.
+  for (const b of s.samples.breath) if (b.t >= 80000 && b.t <= 90000) b.v = 22;
+  const { moments } = detectMoments(s);
+  const face = moments.filter((m) => m.signals.some((x) => x.kind === 'expression'));
+  assert.strictEqual(face.length, 2);
+  const withBreath = moments.find((m) => m.signals.some((x) => x.kind === 'breathRate'));
+  assert.ok(withBreath.signals.some((x) => x.label.startsWith('Face: surprise')));
+});
+
+test('events after a face reaction are not listed as its cause', () => {
+  const s = calmSession();
+  for (const e of s.samples.expr) if (e.t >= 60000 && e.t <= 62000) e.v = { neutral: 0.1, sad: 0.9 };
+  for (const p of s.samples.pulse) if (p.t >= 70000 && p.t <= 85000) p.v += 15;
+  s.events.push({ t: 59000, type: 'click', text: 'Close' }, { t: 75000, type: 'typing', text: 'Email' });
+  const m = detectMoments(s).moments.find((x) => x.signals.some((y) => y.kind === 'expression'));
+  assert.ok(m.signals.some((y) => y.kind === 'pulse'));
+  assert.deepStrictEqual(m.events.map((e) => e.text), ['Close']);
 });

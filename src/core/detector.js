@@ -40,9 +40,22 @@ const DEFAULTS = {
   mergeGapMs: 6000,
   // A new hit of the same kind needs this much quiet first.
   refractoryMs: 8000,
+  // Expressions that count as a negative reaction.
+  exprNegative: ['angry', 'contempt', 'disgust', 'fear'],
+  // "Sad" is checked on its own. The model reads a face looking down at the
+  // keyboard as sad, so sad is ignored from 1 s before to 3 s after typing or
+  // clicking into a form field.
+  exprSad: ['sad'],
+  exprSadSkipBeforeMs: 1000,
+  exprSadSkipAfterMs: 3000,
+  // Sad is the noisiest expression, so it must last longer.
+  exprSadMinDurationMs: 1500,
+  // Surprise is checked on its own: it can be good or bad, but it shows that
+  // something on screen was not expected.
+  exprSurprise: ['surprise'],
+  // Expressions that count as a positive reaction.
+  exprPositive: ['happy'],
 };
-
-const NEGATIVE = ['angry', 'contempt', 'disgust', 'fear', 'sad'];
 const WEIGHTS = { pulse: 2, expression: 2, breathHold: 1.5, blink: 1, breathRate: 1 };
 
 function median(values) {
@@ -149,11 +162,11 @@ function detectBreathRate(session, cfg, invalid, from, to) {
     }));
 }
 
-function negativeLevel(scores) {
+function expressionLevel(scores, names) {
   let total = 0;
   let top = null;
   let topValue = 0;
-  for (const name of NEGATIVE) {
+  for (const name of names) {
     const v = scores[name] || 0;
     total += v;
     if (v > topValue) {
@@ -164,10 +177,26 @@ function negativeLevel(scores) {
   return { total: Math.min(1, total), top };
 }
 
-function detectExpression(session, cfg, invalid, from, to, baseline) {
-  const raw = usable(session.samples.expr, 0, to, invalid, cfg.invalidPadMs, false);
+// Times when the tester's eyes are probably on the keyboard: typing, or clicking
+// into a form field.
+function keyboardPeriods(events, cfg) {
+  const fieldTags = new Set(['input', 'textarea', 'select', 'label']);
+  return (events || [])
+    .filter((e) => e.type === 'typing' || e.type === 'change' || (e.type === 'click' && fieldTags.has(e.tag)))
+    .map((e) => ({ start: e.t - cfg.exprSadSkipBeforeMs, end: e.t + cfg.exprSadSkipAfterMs }));
+}
+
+// Expression scores need only the face, so a period when only the chest is out of
+// view does not block them. Movement, light and other problems still do.
+function faceInvalid(invalid) {
+  return invalid.filter((iv) => !/chest/i.test(iv.reason || ''));
+}
+
+function detectExpression(session, cfg, invalid, from, to, baseline, spec) {
+  const raw = usable(session.samples.expr, 0, to, faceInvalid(invalid), cfg.invalidPadMs, false);
   if (!raw.length) return [];
-  const levels = raw.map((s) => ({ t: s.t, ...negativeLevel(s.v) }));
+  const skip = spec.skip || [];
+  const levels = raw.map((s) => (inAny(skip, s.t, 0) ? { t: s.t, total: 0, top: null } : { t: s.t, ...expressionLevel(s.v, spec.names) }));
   const baseLevels = levels.filter((l) => l.t >= baseline.start && l.t <= baseline.end).map((l) => l.total);
   const base = baseLevels.length ? mean(baseLevels) : 0;
   const threshold = Math.max(cfg.exprMinLevel, base + cfg.exprRiseOverBaseline);
@@ -177,13 +206,18 @@ function detectExpression(session, cfg, invalid, from, to, baseline) {
   let lastEnd = -Infinity;
   let head = 0;
   let sum = 0;
+  let wasBelow = true;
   for (let i = 0; i < levels.length; i++) {
     sum += levels[i].total;
     while (levels[i].t - levels[head].t > cfg.exprSmoothMs) sum -= levels[head++].total;
     const smooth = sum / (i - head + 1);
     const t = levels[i].t;
+    const crossing = wasBelow;
+    wasBelow = smooth < threshold;
     if (smooth >= threshold) {
-      if (!open && t - lastEnd >= cfg.refractoryMs) open = { onset: t, end: t, peak: smooth, tops: {} };
+      // Start only where the level rises. A level that stays high through the quiet
+      // period must not start a hit later, on whatever screen is showing by then.
+      if (!open && crossing && t - lastEnd >= cfg.refractoryMs) open = { onset: t, end: t, peak: smooth, tops: {} };
       if (open) {
         open.end = t;
         open.peak = Math.max(open.peak, smooth);
@@ -198,11 +232,12 @@ function detectExpression(session, cfg, invalid, from, to, baseline) {
   if (open) hits.push(open);
 
   return hits
-    .filter((h) => h.onset >= from && h.end - h.onset >= cfg.exprMinDurationMs)
+    .filter((h) => h.onset >= from && h.end - h.onset >= (spec.minDurationMs ?? cfg.exprMinDurationMs))
     .map((h) => {
       const top = Object.entries(h.tops).sort((a, b) => b[1] - a[1])[0]?.[0] || 'negative';
       return {
         kind: 'expression',
+        tone: spec.tone,
         onset: h.onset,
         end: h.end,
         window: { start: Math.max(0, h.onset - cfg.exprLagMs), end: h.onset },
@@ -344,7 +379,44 @@ function detectBreathHold(session, cfg, invalid, from, to, baseline) {
     }));
 }
 
+const isFast = (h) => h.kind === 'expression' || h.kind === 'breathHold';
+
+// The fast signal that best marks a moment: the biggest change.
+function strongestFast(hits) {
+  return hits.filter(isFast).sort((a, b) => b.delta - a.delta || a.onset - b.onset)[0] || null;
+}
+
+// Fast hits (face, held breath) join when they are close in time. A slow hit (pulse,
+// breathing rate, blinking) points back over a long window, so it must not glue two
+// separate fast reactions together: it joins the one fast group it overlaps that is
+// nearest to its own onset. Slow hits with no fast group join each other.
 function mergeHits(hits, cfg) {
+  const groups = mergeWindows(hits.filter(isFast), cfg);
+  const lonely = [];
+  for (const hit of hits.filter((h) => !isFast(h))) {
+    let best = null;
+    let bestDistance = Infinity;
+    for (const group of groups) {
+      for (const f of group.hits) {
+        if (!isFast(f)) continue;
+        if (f.onset < hit.window.start - cfg.mergeGapMs || f.onset > hit.window.end + cfg.mergeGapMs) continue;
+        const distance = Math.abs(hit.onset - f.onset);
+        if (distance < bestDistance) {
+          best = group;
+          bestDistance = distance;
+        }
+      }
+    }
+    if (best) {
+      best.hits.push(hit);
+      best.start = Math.min(best.start, hit.window.start);
+      best.end = Math.max(best.end, hit.window.end);
+    } else lonely.push(hit);
+  }
+  return [...groups, ...mergeWindows(lonely, cfg)].sort((a, b) => a.start - b.start);
+}
+
+function mergeWindows(hits, cfg) {
   const sorted = [...hits].sort((a, b) => a.window.start - b.window.start);
   const groups = [];
   for (const hit of sorted) {
@@ -396,27 +468,41 @@ function detectMoments(session, options = {}) {
 
   const hits = [
     ...detectPulse(session, cfg, invalid, from, to),
-    ...detectExpression(session, cfg, invalid, from, to, baseline),
+    ...detectExpression(session, cfg, invalid, from, to, baseline, { names: cfg.exprNegative, tone: 'negative' }),
+    ...detectExpression(session, cfg, invalid, from, to, baseline, {
+      names: cfg.exprSad,
+      tone: 'negative',
+      skip: keyboardPeriods(session.events, cfg),
+      minDurationMs: cfg.exprSadMinDurationMs,
+    }),
+    ...detectExpression(session, cfg, invalid, from, to, baseline, { names: cfg.exprSurprise, tone: 'negative' }),
+    ...detectExpression(session, cfg, invalid, from, to, baseline, { names: cfg.exprPositive, tone: 'positive' }),
     ...detectBreathHold(session, cfg, invalid, from, to, baseline),
     ...detectBlink(session, cfg, invalid, from, to, baseline),
     ...detectBreathRate(session, cfg, invalid, from, to),
   ];
 
   const events = session.events || [];
-  const moments = mergeHits(hits, cfg).map((group, index) => {
+  // Positive and negative reactions never join into one moment.
+  const positive = hits.filter((h) => h.tone === 'positive');
+  const groups = [...mergeHits(hits.filter((h) => h.tone !== 'positive'), cfg), ...mergeHits(positive, cfg)];
+  const moments = groups.map((group, index) => {
     const kinds = [...new Set(group.hits.map((h) => h.kind))];
     const score = kinds.reduce((sum, k) => sum + WEIGHTS[k], 0);
-    // The fastest signal gives the best time. Slow averages point to a window.
-    const fast = group.hits.find((h) => h.kind === 'expression') || group.hits.find((h) => h.kind === 'breathHold');
+    // The strongest fast signal gives the best time. Slow averages point to a window.
+    const fast = strongestFast(group.hits);
     const t = fast ? fast.onset : Math.round((group.start + group.end) / 2);
     return {
       id: `m${index + 1}`,
       t,
       window: { start: Math.max(from, group.start - 2000), end: group.end },
       strength: kinds.length >= 2 ? 'strong' : 'single',
+      tone: group.hits[0].tone === 'positive' ? 'positive' : 'negative',
       score,
-      signals: group.hits.map(({ kind, label, detail, delta, onset, end }) => ({ kind, label, detail, delta, onset, end })),
-      events: events.filter((e) => e.t >= group.start - 2000 && e.t <= group.end + 1000),
+      signals: group.hits.map(({ kind, tone, label, detail, delta, onset, end }) => ({ kind, tone, label, detail, delta, onset, end })),
+      // With a fast signal, the cause is on screen before that signal. A slow signal
+      // in the same moment must not pull in events that came after it.
+      events: events.filter((e) => e.t >= group.start - 2000 && e.t <= (fast ? t : group.end) + 1000),
       url: [...events].reverse().find((e) => e.t <= group.end && e.url)?.url || null,
     };
   });
