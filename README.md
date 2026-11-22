@@ -32,21 +32,26 @@ signals and a yellow "Preview mode" banner on every screen.
 
 1. **Set up.** Pick the built-in demo shop or type a web address. Write the task.
 2. **Consent.** The tester reads what is measured and what is kept, then agrees or not.
-3. **Camera check.** Flinch waits until SmartSpectra reports a pulse it trusts.
+3. **Camera check.** Pick a camera. Flinch waits until SmartSpectra reports a pulse it trusts.
 4. **30 seconds of calm.** This is the tester's resting level for today.
 5. **The task.** The site runs inside the app. A side panel shows the live signals.
 6. **The report.** A timeline, and one card per reaction moment.
 
-The demo shop has six usability problems built in on purpose: a popup with a tiny close
+The demo shop has seven usability problems built in on purpose: a popup with a tiny close
 button, a hidden delivery option, an error that says only "Invalid input.", a form that
-clears a field, a fee that appears at the end, and a slow button with no feedback.
+clears a field, a fee that appears at the end, a slow button with no feedback, and a
+false "charged twice" warning with a countdown. It ends on a pleasant note: a free gift
+you can open.
 
 ## How it finds a moment
 
 | Signal (from SmartSpectra) | What counts as a change | Why the time is a window |
 |---|---|---|
 | Pulse rate | 6 bpm above its own median from 30 to 10 seconds earlier | It is a 12 second average |
-| Facial expression | Negative expressions at 35% or more, and at least 25 points above rest, for 0.7 s | Per frame, so it is exact |
+| Facial expression | Angry, fear, disgust and contempt together at 35% or more, and at least 25 points above rest, for 0.7 s | Per frame, so it is exact |
+| Sad face | The same rule for "sad" alone, but for 1.5 s. Ignored while the tester types or clicks into a form field: the model reads a face looking down at the keyboard as sad | Per frame |
+| Surprised face | The same rule for "surprise" alone | Per frame |
+| Happy face | The same rule for "happy". Shown in green as a positive moment, never joined with the others | Per frame |
 | Chest breathing trace | Movement under 20% of the usual depth for 4 s (a held breath) | Near exact |
 | Blinking | 40% or less of the resting blink rate (a stare), or 220% or more (a flurry) | Counted over 10 seconds |
 | Breathing rate | 4 per minute above its own median from 60 to 20 seconds earlier | It is a 30 second average |
@@ -58,7 +63,7 @@ plain arithmetic in [`src/core/detector.js`](src/core/detector.js).
 
 Flinch trusts the SDK's own quality flags. It uses only pulse and breathing samples that
 SmartSpectra marks as stable (the breathing trace carries the breathing-rate flag). When the SDK reports too much movement, bad light or no
-face, that period is greyed out on the timeline and nothing is flagged inside it.
+face, that period is greyed out on the timeline and nothing is flagged inside it. One exception: when only the chest is out of view, face expressions still count, because they need only the face.
 
 ### Optional: AI notes
 
@@ -94,8 +99,11 @@ confidence. Without the key, the app works the same and nothing is sent to Anthr
 - **It is not a medical tool.** It says nothing about anyone's health.
 - **A moment is a hint.** It shows where the body changed. It does not prove the page
   caused it. Ask the tester.
-- The tester must sit fairly still, in good light, with face and upper chest in view.
-  Talking disturbs the breathing signal, so think-aloud tests lose breathing moments.
+- The tester must sit fairly still, in good light, with face, shoulders and upper chest
+  in the picture. SmartSpectra stops sending pulse and breathing when the chest leaves
+  the picture, and Flinch then shows "Measurement paused". A laptop camera is narrow, so
+  leaning in to type can cut the chest off. A camera with a wider view works better.
+- Talking disturbs the breathing signal, so think-aloud tests lose breathing moments.
 - Pulse and breathing rate react late (12 and 30 second averages).
 - Pages that refuse to load inside another app's browser view cannot be tested.
 
