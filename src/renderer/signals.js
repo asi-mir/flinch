@@ -10,7 +10,7 @@
 //   onError(message, fatal)
 const { normalizeMetrics } = require('../core/normalize');
 
-function createSdkSource(apiKey, handlers) {
+function createSdkSource(apiKey, handlers, options = {}) {
   const sdkModule = require('@smartspectra/node-sdk/renderer');
   const { decodeMetrics } = require('@smartspectra/node-sdk/messages');
   const { SmartSpectraSDK, MetricType, ValidationCode, SmartSpectraErrorCode, breathingMetrics, cardioMetrics } = sdkModule;
@@ -19,6 +19,31 @@ function createSdkSource(apiKey, handlers) {
   const faceMetrics = [MetricType.BLINKING, MetricType.TALKING, MetricType.EXPRESSIONS];
   let sdk = null;
   let withFace = true;
+  const trace = handlers.onTrace || (() => {});
+  // A camera the user picked. With none picked, the SDK opens the default camera itself.
+  let deviceId = options.deviceId || null;
+  let ownStream = null;
+
+  async function openCamera() {
+    if (!deviceId) return;
+    try {
+      ownStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      });
+    } catch {
+      deviceId = null; // that camera is gone: fall back to the default one
+      return;
+    }
+    sdk.useMediaStream(ownStream);
+    handlers.onStream?.(ownStream);
+  }
+
+  // The SDK never stops a stream it was given, so this side must.
+  function closeCamera() {
+    if (!ownStream) return;
+    for (const track of ownStream.getTracks()) track.stop();
+    ownStream = null;
+  }
 
   function build() {
     sdk = new SmartSpectraSDK({
@@ -29,15 +54,21 @@ function createSdkSource(apiKey, handlers) {
     });
     sdk.on('streamAvailable', (stream) => handlers.onStream?.(stream));
     sdk.on('metrics', (buf) => {
-      const samples = normalizeMetrics(decodeMetrics(buf));
+      const metrics = decodeMetrics(buf);
+      trace('metrics', metrics);
+      const samples = normalizeMetrics(metrics);
       if (samples.length) handlers.onSamples(samples);
     });
+    sdk.on('processingStatus', (...args) => trace('processingStatus', args));
     sdk.on('validationStatus', (code, _ts, hint) => {
-      // A hidden chest only affects breathing, and breathing samples carry their own "stable" flag.
-      const ok = code === ValidationCode.kOk || code === ValidationCode.kChestNotVisible;
+      trace('validationStatus', { code, hint });
+      // Only kOk counts. Seen with SDK 3.5.0: while it reports "chest not visible" it
+      // sends blink and talk data only, and no pulse or breathing.
+      const ok = code === ValidationCode.kOk;
       handlers.onValidation(ok, hint || '', code);
     });
     sdk.on('error', (code, message, retryable) => {
+      trace('error', { code, message, retryable });
       handlers.onError(describeError(code, message), !retryable);
     });
   }
@@ -57,30 +88,44 @@ function createSdkSource(apiKey, handlers) {
     get faceAvailable() {
       return withFace;
     },
+    get deviceId() {
+      return deviceId;
+    },
     async start() {
       build();
+      await openCamera();
       try {
-        await sdk.start();
-      } catch (err) {
-        if (err.code === SmartSpectraErrorCode.kMetricNotAuthorized && withFace) {
+        try {
+          await sdk.start();
+        } catch (err) {
+          if (err.code !== SmartSpectraErrorCode.kMetricNotAuthorized || !withFace) throw err;
           // This key cannot use face metrics. Carry on with pulse and breathing.
           withFace = false;
           sdk.destroy();
           build();
+          if (ownStream) sdk.useMediaStream(ownStream);
           await sdk.start();
-        } else {
-          throw new Error(describeError(err.code, err.message));
         }
+      } catch (err) {
+        closeCamera();
+        throw new Error(describeError(err.code, err.message));
       }
     },
     async stop() {
-      if (!sdk) return;
+      if (!sdk) return closeCamera();
       try {
         await sdk.stop();
       } finally {
         sdk.destroy();
         sdk = null;
+        closeCamera();
       }
+    },
+    // Switch to another camera (null = the default one). Restarts the measurement.
+    async setCamera(id) {
+      await this.stop();
+      deviceId = id || null;
+      await this.start();
     },
     poke() {},
   };

@@ -27,7 +27,8 @@ function toMarkdown(data) {
     '',
   ];
   for (const m of moments) {
-    lines.push(`### ${m.number}. At ${rel(m.t)} on ${m.url || data.url} (${m.strength === 'strong' ? 'two or more signals' : 'one signal'})`, '');
+    const kind = m.tone === 'positive' ? 'positive' : m.strength === 'strong' ? 'two or more signals' : 'one signal';
+    lines.push(`### ${m.number}. At ${rel(m.t)} on ${m.url || data.url} (${kind})`, '');
     lines.push('Body:', ...m.signals.map((s) => `- ${s.label}. ${s.detail}`), '');
     const note = data.notes?.items?.[m.id];
     if (note) lines.push(`AI note (${note.confidence} confidence): **${note.headline}** ${note.whatHappened} Try: ${note.suggestion}`, '');
@@ -98,7 +99,7 @@ function showReport({ root, data, shotsUrl, api, onBack, banner, aiNotes }) {
     const note = data.notes?.items?.[m.id];
     const card = h(
       'article',
-      { class: 'moment', onclick: () => select(m.id, false) },
+      { class: `moment${m.tone === 'positive' ? ' positive' : ''}`, onclick: () => select(m.id, false) },
       h(
         'div',
         { class: 'moment-shot' },
@@ -112,7 +113,9 @@ function showReport({ root, data, shotsUrl, api, onBack, banner, aiNotes }) {
           {},
           h('span', { class: `number ${m.strength}` }, m.number),
           h('h3', {}, `At ${rel(m.t)}`),
-          h('span', { class: `tag ${m.strength}` }, m.strength === 'strong' ? 'Two or more signals agree' : 'One signal only'),
+          m.tone === 'positive'
+            ? h('span', { class: 'tag positive' }, 'Positive reaction')
+            : h('span', { class: `tag ${m.strength}` }, m.strength === 'strong' ? 'Two or more signals agree' : 'One signal only'),
         ),
         h('p', { class: 'muted small' }, m.url || data.url),
         note
@@ -125,7 +128,7 @@ function showReport({ root, data, shotsUrl, api, onBack, banner, aiNotes }) {
               h('p', {}, h('strong', {}, 'Try: '), note.suggestion),
             )
           : null,
-        h('div', { class: 'chips' }, m.signals.map((s) => h('span', { class: `chip ${s.kind}`, title: s.detail }, s.label))),
+        h('div', { class: 'chips' }, m.signals.map((s) => h('span', { class: `chip ${s.kind}${s.tone === 'positive' ? ' positive' : ''}`, title: s.detail }, s.label))),
         h('ul', { class: 'evidence' }, m.signals.map((s) => h('li', {}, s.detail))),
         events.length
           ? [h('h4', {}, 'On screen just before'), h('ol', { class: 'events' }, events.map((e) => h('li', { class: note?.eventT === e.t ? 'cited' : null }, h('time', {}, rel(e.t)), describeEvent(e))))]
@@ -200,7 +203,11 @@ function showReport({ root, data, shotsUrl, api, onBack, banner, aiNotes }) {
         h(
           'section',
           { class: 'stats' },
-          stat('Reaction moments', moments.length, `${moments.filter((m) => m.strength === 'strong').length} with two or more signals`),
+          stat(
+            'Reaction moments',
+            moments.length,
+            `${moments.filter((m) => m.strength === 'strong').length} with two or more signals, ${moments.filter((m) => m.tone === 'positive').length} positive`,
+          ),
           stat('Length', clock(summary.durationMs), `measured ${summary.measuredPct}% of the time`),
           stat('Pulse at rest', summary.pulse.baseline != null ? `${Math.round(summary.pulse.baseline)} bpm` : '--', 'before the task'),
           stat('Pulse during task', summary.pulse.test != null ? `${Math.round(summary.pulse.test)} bpm` : '--', pulseShift != null ? `${pulseShift >= 0 ? '+' : ''}${pulseShift.toFixed(1)} from rest, highest ${Math.round(summary.pulse.max)}` : ''),
@@ -209,7 +216,7 @@ function showReport({ root, data, shotsUrl, api, onBack, banner, aiNotes }) {
         h(
           'section',
           { class: 'card timeline-card' },
-          h('div', { class: 'timeline-wrap' }, canvas, h('p', { class: 'muted small legend' }, 'Numbered pins are reaction moments. Orange ticks are errors and rage clicks. Grey bands are times when the measurement was not usable.')),
+          h('div', { class: 'timeline-wrap' }, canvas, h('p', { class: 'muted small legend' }, 'Numbered pins are reaction moments, green for a positive one. Orange ticks are errors and rage clicks. Grey bands are times when the measurement was not usable.')),
           h('div', { class: 'scrub' }, scrubImage, scrubLabel),
         ),
         h(

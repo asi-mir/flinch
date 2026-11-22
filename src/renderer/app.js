@@ -8,6 +8,7 @@ const { drawTrace, COLORS } = require('./charts');
 
 const api = window.flinch;
 const root = document.getElementById('app');
+const PAUSE_NOTICE_MS = 2000; // short dropouts are not worth a notice
 const BASELINE_MS = 30000;
 const SHOT_EVERY_MS = 2000;
 const TROUBLE = new Set(['rage-click', 'validation-error', 'error-shown', 'js-error', 'load-failed']);
@@ -15,7 +16,7 @@ const TROUBLE = new Set(['rage-click', 'validation-error', 'error-shown', 'js-er
 let info = null;
 
 function mount(...nodes) {
-  root.replaceChildren(...nodes);
+  root.replaceChildren(...nodes.filter((node) => node != null));
   window.scrollTo(0, 0);
 }
 
@@ -203,6 +204,56 @@ function showConsent(plan) {
 
 // ---- Camera check, baseline, test ----------------------------------------------
 
+// The camera picked last time, remembered on this computer only.
+function savedCamera() {
+  try {
+    return localStorage.getItem('flinch.camera') || null;
+  } catch {
+    return null;
+  }
+}
+function saveCamera(id) {
+  try {
+    localStorage.setItem('flinch.camera', id);
+  } catch {
+    // Not being able to remember the choice is harmless.
+  }
+}
+
+// With FLINCH_DEBUG=1, print what the SDK sends: every status change, the first metrics
+// packet of each shape, and a count of packets per shape every 5 seconds.
+const traceShapes = new Map();
+let traceLast = 0;
+let traceStatus = '';
+function traceSdk(name, data) {
+  if (name !== 'metrics') {
+    const line = `${name} ${JSON.stringify(data)}`;
+    if (line !== traceStatus) console.log('[sdk]', line);
+    traceStatus = line;
+    return;
+  }
+  const brief = (value, depth = 0) => {
+    if (Array.isArray(value)) return value.length ? { n: value.length, last: brief(value[value.length - 1], depth + 1) } : undefined;
+    if (value && typeof value === 'object') {
+      if (typeof value.toNumber === 'function') return value.toNumber();
+      if (depth > 5) return '…';
+      const entries = Object.entries(value).map(([k, v]) => [k, brief(v, depth + 1)]).filter(([, v]) => v !== undefined);
+      return entries.length ? Object.fromEntries(entries) : undefined;
+    }
+    return typeof value === 'number' ? Math.round(value * 1000) / 1000 : value;
+  };
+  const summary = brief(data) || {};
+  const shape = Object.entries(summary).map(([group, fields]) => `${group}:${Object.keys(fields || {}).join('+')}`).join(' ');
+  if (!traceShapes.has(shape)) console.log('[sdk] new packet shape', shape, JSON.stringify(summary));
+  traceShapes.set(shape, (traceShapes.get(shape) || 0) + 1);
+  const now = performance.now();
+  if (now - traceLast > 5000) {
+    traceLast = now;
+    console.log('[sdk] packets so far', JSON.stringify(Object.fromEntries(traceShapes)));
+    if (summary.cardio || summary.breathing) console.log('[sdk] latest', JSON.stringify(summary));
+  }
+}
+
 async function runSession(plan) {
   const recorder = new Recorder();
   const traces = { pulseTrace: [], breathTrace: [] };
@@ -234,11 +285,13 @@ async function runSession(plan) {
       if (isFatal) fatal = message;
       else validation = { ok: false, hint: message };
     },
+    onTrace: info.debug ? traceSdk : undefined,
   };
 
-  const source = info.simulate ? createSimSource(handlers) : createSdkSource(await api.getKey(), handlers);
+  const source = info.simulate ? createSimSource(handlers) : createSdkSource(await api.getKey(), handlers, { deviceId: savedCamera() });
   const cleanUp = async () => {
     stopped = true;
+    navigator.mediaDevices?.removeEventListener('devicechange', listCameras);
     try {
       await source.stop();
     } catch {
@@ -254,11 +307,39 @@ async function runSession(plan) {
   // --- Step 1: camera check
   const hint = h('p', { class: 'hint' }, 'Starting the camera…');
   const step = h('h1', {}, 'Camera check');
-  const lede = h('p', { class: 'lede' }, 'Sit comfortably, face the screen, and keep your face and upper chest in view.');
+  const lede = h('p', { class: 'lede' }, 'Tilt the screen towards you and sit back a little. The picture must show your face near the top, then your shoulders and upper chest. Then sit still.');
   const live = liveReadout(recorder, traces);
   const action = h('div', { class: 'row' });
   const cancel = h('button', { onclick: () => abort(sessionId) }, 'Stop and delete');
   let sessionId = null;
+
+  // Camera picker. A camera with a wider view keeps the chest in the picture more easily.
+  const cameraSelect = h('select', {
+    'aria-label': 'Camera',
+    onchange: async () => {
+      const id = cameraSelect.value;
+      cameraSelect.disabled = true;
+      validation = { ok: false, hint: 'Switching camera…' };
+      recorder.latest = {}; // readings from the old camera must not pass the check
+      traces.pulseTrace.length = 0;
+      traces.breathTrace.length = 0;
+      try {
+        await source.setCamera(id);
+        saveCamera(id);
+      } catch (err) {
+        fatal = err.message;
+      }
+      cameraSelect.disabled = false;
+      listCameras();
+    },
+  });
+  const cameraRow = h('label', { class: 'camera-pick' }, h('span', { class: 'label' }, 'Camera'), cameraSelect);
+  async function listCameras() {
+    const cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput' && d.deviceId);
+    const current = stream?.getVideoTracks()[0]?.getSettings().deviceId;
+    cameraSelect.replaceChildren(...cameras.map((c, i) => h('option', { value: c.deviceId, selected: c.deviceId === current }, c.label || `Camera ${i + 1}`)));
+    cameraRow.classList.toggle('hidden', cameras.length === 0);
+  }
 
   mount(
     banner(),
@@ -267,7 +348,7 @@ async function runSession(plan) {
       { class: 'narrow' },
       step,
       lede,
-      h('section', { class: 'card check-card' }, info.simulate ? h('div', { class: 'preview fake' }, 'No camera in preview mode') : video, h('div', { class: 'check-side' }, hint, live.node, action)),
+      h('section', { class: 'card check-card' }, info.simulate ? h('div', { class: 'preview fake' }, 'No camera in preview mode') : h('div', { class: 'check-cam' }, video, cameraRow), h('div', { class: 'check-side' }, hint, live.node, action)),
       h('div', { class: 'row' }, cancel),
     ),
   );
@@ -276,6 +357,10 @@ async function runSession(plan) {
     if (!info.simulate && !(await api.cameraAccess())) throw new Error('Flinch has no permission to use the camera. Allow it in System Settings, Privacy and Security, Camera.');
     sessionId = await api.createSession();
     await source.start();
+    if (!info.simulate) {
+      await listCameras();
+      navigator.mediaDevices.addEventListener('devicechange', listCameras);
+    }
   } catch (err) {
     hint.textContent = err.message;
     hint.classList.add('error');
@@ -300,6 +385,8 @@ async function runSession(plan) {
   // --- Step 2: baseline
   step.textContent = 'Now relax for 30 seconds';
   lede.textContent = 'Just sit and breathe normally. Flinch is learning what calm looks like for you today.';
+  cameraSelect.disabled = true; // a camera change now would spoil the resting level
+  cameraRow.classList.add('hidden');
   recorder.beginBaseline();
   const baselineEnd = performance.now() + BASELINE_MS;
   const calm = await waitFor(() => {
@@ -336,7 +423,11 @@ async function runSession(plan) {
   const address = h('span', { class: 'address' }, '');
   const status = h('span', { class: 'pill' }, 'Measuring');
   const timer = h('span', { class: 'timer' }, '0:00');
-  const panel = h('aside', { class: 'panel' }, h('h3', {}, 'Live signals'), live.node, info.simulate ? null : video, h('p', { class: 'muted small' }, 'Video is not recorded. Only numbers are kept.'));
+  const panel = h('aside', { class: 'panel' }, h('h3', {}, 'Live signals'), info.simulate ? null : video, live.node, h('p', { class: 'muted small' }, 'Video is not recorded. Only numbers are kept.'));
+  // Shown when the SDK cannot measure for more than a moment, so the tester can fix it.
+  const pausedHint = h('span', {});
+  const paused = h('div', { class: 'paused hidden', role: 'status' }, h('strong', {}, 'Measurement paused.'), pausedHint);
+  let badSince = null;
   const togglePanel = h('button', { onclick: () => panel.classList.toggle('hidden') }, 'Hide / show signals');
 
   const cleanUrl = (raw) => {
@@ -438,7 +529,7 @@ async function runSession(plan) {
         h('button', { onclick: () => view.canGoBack() && view.goBack(), title: 'Back' }, '←'),
         address,
       ),
-      h('div', { class: 'stage' }, h('div', { class: 'site-wrap' }, view), panel),
+      h('div', { class: 'stage' }, h('div', { class: 'site-wrap' }, view, paused), panel),
     ),
   );
   recorder.beginTest();
@@ -449,9 +540,18 @@ async function runSession(plan) {
       status.textContent = fatal;
       status.className = 'pill bad';
     } else {
-      status.textContent = validation.ok ? 'Measuring' : validation.hint || 'Not measuring';
+      status.textContent = validation.ok ? 'Measuring' : 'Paused';
       status.className = validation.ok ? 'pill' : 'pill warn';
     }
+    if (validation.ok || fatal) badSince = null;
+    else if (badSince == null) badSince = recorder.now();
+    const showPaused = badSince != null && recorder.now() - badSince > PAUSE_NOTICE_MS;
+    if (showPaused) {
+      pausedHint.textContent = ` ${validation.hint || 'The camera cannot measure right now.'} Keep your face, shoulders and upper chest in the picture.`;
+      panel.classList.remove('hidden'); // the picture helps the tester get back in view
+    }
+    paused.classList.toggle('hidden', !showPaused);
+    video.classList.toggle('bad', showPaused);
     const elapsed = recorder.now() - recorder.test.start;
     timer.textContent = clock(elapsed);
     live.update();
@@ -482,6 +582,7 @@ function liveReadout(recorder, traces) {
   const pulse = h('span', { class: 'big pulse' }, '--');
   const breath = h('span', { class: 'big breath' }, '--');
   const face = h('span', { class: 'big face' }, '--');
+  const faceSure = h('span', { class: 'unit' }, '');
   const blink = h('span', { class: 'dot' });
   const pulseCanvas = h('canvas', { class: 'trace' });
   const breathCanvas = h('canvas', { class: 'trace' });
@@ -490,7 +591,7 @@ function liveReadout(recorder, traces) {
     { class: 'live' },
     h('div', { class: 'metric' }, h('span', { class: 'label' }, 'Pulse'), h('div', {}, pulse, h('span', { class: 'unit' }, 'bpm')), pulseCanvas),
     h('div', { class: 'metric' }, h('span', { class: 'label' }, 'Breathing'), h('div', {}, breath, h('span', { class: 'unit' }, 'per min')), breathCanvas),
-    h('div', { class: 'metric' }, h('span', { class: 'label' }, 'Face'), h('div', {}, face, blink)),
+    h('div', { class: 'metric' }, h('span', { class: 'label' }, 'Face'), h('div', {}, face, faceSure, blink)),
   );
   return {
     node,
@@ -501,8 +602,12 @@ function liveReadout(recorder, traces) {
       breath.textContent = fresh(latest.breath) && latest.breath.stable ? Math.round(latest.breath.v) : '--';
       if (fresh(latest.expr)) {
         const [name, value] = Object.entries(latest.expr.v).sort((a, b) => b[1] - a[1])[0] || ['--', 0];
-        face.textContent = `${name} ${Math.round(value * 100)}%`;
-      } else face.textContent = '--';
+        face.textContent = name;
+        faceSure.textContent = `${Math.round(value * 100)}% sure`;
+      } else {
+        face.textContent = '--';
+        faceSure.textContent = '';
+      }
       blink.classList.toggle('on', !!(fresh(latest.blink) && latest.blink.v));
       if (pulseCanvas.isConnected) {
         drawTrace(pulseCanvas, traces.pulseTrace, COLORS.pulse);
@@ -516,6 +621,14 @@ function liveReadout(recorder, traces) {
 
 async function openReport(id) {
   const { data, shotsUrl } = await api.loadSession(id);
+  // Re-run the detector so older tests follow the current rules. AI notes point at
+  // the moments they were written for, so they are dropped when the moments change.
+  const fresh = detectMoments(data);
+  if (JSON.stringify(fresh) !== JSON.stringify(data.result)) {
+    data.result = fresh;
+    delete data.notes;
+    await api.saveSession(id, data);
+  }
   showReport({ root, data, shotsUrl, api, onBack: showHome, banner: info?.simulate ? banner() : null, aiNotes: !!info?.aiNotes });
 }
 

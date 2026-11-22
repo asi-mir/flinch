@@ -142,6 +142,7 @@ function lockDown() {
 function registerIpc() {
   handle('app:info', () => ({
     simulate: SIMULATE,
+    debug: process.env.FLINCH_DEBUG === '1',
     hasKey: !!getApiKey(),
     aiNotes: notes.available(),
     keyFromEnv: !!process.env.SMARTSPECTRA_API_KEY,
@@ -209,7 +210,17 @@ function registerIpc() {
   });
 }
 
+// One copy of the app at a time: two copies would fight over the camera.
+const firstCopy = app.requestSingleInstanceLock();
+if (!firstCopy) app.quit();
+app.on('second-instance', () => {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.focus();
+});
+
 app.whenReady().then(() => {
+  if (!firstCopy) return;
   store = new Store(app.getPath('userData'));
   lockDown();
   registerIpc();

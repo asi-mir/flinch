@@ -36,7 +36,7 @@ const SYSTEM = `You help a usability researcher read the results of a moderated 
 
 A tester did a task on a website while a camera measured their pulse, breathing, blinking and facial expression. A program found the moments where those signals changed against the tester's own resting level. For each moment you get the signal changes, the page events just before it, and a screenshot of the page at that time.
 
-For each moment, say what on the screen most likely caused the reaction and suggest one concrete fix.
+For each moment, say what on the screen most likely caused the reaction and suggest one concrete fix. Some moments are marked positive (the face read as happy). For those, say what on the screen most likely caused it and, as the suggestion, what the team should keep.
 
 Rules:
 - Work only from what you are given. A body reaction is a hint that something happened, not proof of a problem. If the screen and the events do not explain it, set based_on to "unclear" and say so plainly. Do not invent a cause.
@@ -61,7 +61,7 @@ function buildContent(data, shotsDir) {
   for (const m of moments) {
     const events = momentEvents(m);
     const lines = [
-      `--- Moment ${m.id}, at ${rel(m.t)} into the task, page ${m.url || data.url}`,
+      `--- Moment ${m.id}, at ${rel(m.t)} into the task, page ${m.url || data.url}${m.tone === 'positive' ? ' (positive)' : ''}`,
       'Signal changes:',
       ...m.signals.map((s) => `- ${s.label}. ${s.detail}`),
       events.length ? 'Page events just before:' : 'Page events just before: none',

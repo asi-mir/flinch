@@ -1,5 +1,6 @@
 'use strict';
 const { clock } = require('./dom');
+const { DEFAULTS } = require('../core/detector');
 
 const COLORS = {
   ink: '#1c1b19',
@@ -9,6 +10,7 @@ const COLORS = {
   breath: '#1971c2',
   face: '#7048e8',
   moment: '#d9480f',
+  positive: '#2b8a3e',
   invalid: 'rgba(138, 134, 126, 0.16)',
 };
 
@@ -48,7 +50,9 @@ function drawTrace(canvas, values, color) {
 }
 
 function negative(scores) {
-  return Math.min(1, (scores.angry || 0) + (scores.contempt || 0) + (scores.disgust || 0) + (scores.fear || 0) + (scores.sad || 0));
+  let total = 0;
+  for (const name of DEFAULTS.exprNegative) total += scores[name] || 0;
+  return Math.min(1, total);
 }
 
 // The report timeline: pulse, face, breathing depth, page events and the moments.
@@ -171,17 +175,20 @@ function drawTimeline(canvas, session, options = {}) {
     const a = x(Math.max(start, m.window.start));
     const b = x(Math.min(end, m.window.end));
     const selected = options.selected === m.id;
-    ctx.fillStyle = selected ? 'rgba(217, 72, 15, 0.22)' : 'rgba(217, 72, 15, 0.1)';
+    const positive = m.tone === 'positive';
+    const color = positive ? COLORS.positive : COLORS.moment;
+    const band = positive ? '43, 138, 62' : '217, 72, 15';
+    ctx.fillStyle = `rgba(${band}, ${selected ? 0.22 : 0.1})`;
     ctx.fillRect(a, pad.top, Math.max(2, b - a), height - pad.top - pad.bottom);
     const px = x(m.t);
     ctx.beginPath();
     ctx.arc(px, 11, 9, 0, Math.PI * 2);
-    ctx.fillStyle = m.strength === 'strong' || selected ? COLORS.moment : '#fff';
+    ctx.fillStyle = m.strength === 'strong' || selected ? color : '#fff';
     ctx.fill();
-    ctx.strokeStyle = COLORS.moment;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
     ctx.stroke();
-    ctx.fillStyle = m.strength === 'strong' || selected ? '#fff' : COLORS.moment;
+    ctx.fillStyle = m.strength === 'strong' || selected ? '#fff' : color;
     ctx.textAlign = 'center';
     ctx.font = '600 11px system-ui, sans-serif';
     ctx.fillText(String(m.number), px, 11.5);
