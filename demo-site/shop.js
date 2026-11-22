@@ -6,6 +6,9 @@
 //   4. A failed check clears the email field.
 //   5. A service fee appears only on the last screen.
 //   6. "Pay now" takes four seconds and gives no sign that it is working.
+//   7. Then a scary error says the card may have been charged twice, with a countdown.
+//      It is not true: the payment went through once.
+// The last page has a pleasant ending on purpose: a free gift you can open.
 
 const PRODUCTS = [
   { id: 'blue', name: 'Blue mug', price: 18, color: '#3b6fb6' },
@@ -93,13 +96,71 @@ $('more-delivery').addEventListener('click', (e) => {
   $('extra-delivery').hidden = false;
 });
 
+let paying = false;
 $('pay-button').addEventListener('click', () => {
-  setTimeout(() => {
-    const when = order.how === 'tomorrow' ? 'tomorrow' : order.how === 'pickup' ? 'when you pick it up' : 'in 5 to 8 working days';
-    $('done-text').textContent = `Thank you. Your order arrives ${when}.`;
-    show('done');
-  }, 4000); // problem 6
+  if (paying) return;
+  paying = true;
+  setTimeout(showAlarm, 4000); // problem 6
 });
+
+// Problem 7.
+let alarmTimer = null;
+function showAlarm() {
+  let left = 15;
+  $('alarm-count').textContent = left;
+  $('alarm').hidden = false;
+  alarmTimer = setInterval(() => {
+    left -= 1;
+    $('alarm-count').textContent = Math.max(0, left);
+    if (left <= 0) finishOrder();
+  }, 1000);
+}
+$('alarm-retry').addEventListener('click', () => {
+  $('alarm-retry').textContent = 'Checking...';
+  $('alarm-retry').disabled = true;
+  setTimeout(finishOrder, 1500);
+});
+
+function finishOrder() {
+  if (!alarmTimer) return;
+  clearInterval(alarmTimer);
+  alarmTimer = null;
+  $('alarm').hidden = true;
+  const when = order.how === 'tomorrow' ? 'tomorrow' : order.how === 'pickup' ? 'when you pick it up' : 'in 5 to 8 working days';
+  $('done-text').textContent = `Thank you. Your order arrives ${when}.`;
+  show('done');
+}
+
+// The pleasant ending.
+$('gift-open').addEventListener('click', () => {
+  $('gift-open').hidden = true;
+  $('gift-box').classList.add('open');
+  setTimeout(() => {
+    $('gift-box').hidden = true;
+    $('happy-mug').removeAttribute('hidden'); // SVG has no .hidden property
+    $('gift-title').textContent = 'A free mini mug, with a face!';
+    $('gift-text').textContent = 'It comes in your box. Every one has a different smile.';
+    confetti();
+  }, 600);
+});
+
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const colors = ['#3b6fb6', '#c9b08a', '#6b8f5e', '#c9805a', '#f2a7a0', '#e8c547'];
+  const layer = document.createElement('div');
+  layer.className = 'confetti';
+  for (let i = 0; i < 90; i++) {
+    const bit = document.createElement('i');
+    bit.style.left = `${Math.random() * 100}%`;
+    bit.style.background = colors[i % colors.length];
+    bit.style.animationDelay = `${Math.random() * 0.8}s`;
+    bit.style.animationDuration = `${2.2 + Math.random() * 1.6}s`;
+    bit.style.transform = `rotate(${Math.random() * 360}deg)`;
+    layer.append(bit);
+  }
+  document.body.append(layer);
+  setTimeout(() => layer.remove(), 5000);
+}
 
 $('basket-link').addEventListener('click', (e) => {
   e.preventDefault();

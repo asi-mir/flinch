@@ -30,3 +30,30 @@ legend { font-size: 14px; padding: 0 6px; }
 .popup-box input { margin-top: 8px; }
 .popup-close { position: absolute; top: 6px; right: 8px; border: 0; background: none; padding: 0 3px; font-size: 10px; color: #c9c2b6; }
 [hidden] { display: none !important; }
+
+/* Problem 7: the scary payment error. */
+.alarm { position: fixed; inset: 0; background: rgba(120, 12, 8, 0.82); display: grid; place-items: center; z-index: 10; }
+.alarm-box { width: 460px; max-width: calc(100% - 32px); background: #fff; border-top: 8px solid #b3261e; border-radius: 8px; padding: 30px; text-align: center; animation: shake 0.5s ease-in-out 2; }
+.alarm-box h2 { font-size: 28px; color: #b3261e; margin: 8px 0; }
+.alarm-icon { width: 64px; height: 64px; margin: 0 auto; border-radius: 50%; background: #b3261e; color: #fff; font: 700 44px/64px Arial, sans-serif; }
+.alarm-timer { color: #b3261e; }
+.alarm-timer strong { font-size: 22px; display: inline-block; min-width: 1.6em; animation: blink 1s steps(2) infinite; }
+.alarm-box .buy { background: #b3261e; border-color: #b3261e; }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
+@keyframes blink { 50% { opacity: 0.35; } }
+
+/* The pleasant ending. */
+.done { text-align: center; }
+.relief { color: #3f6b35; font-weight: 700; }
+.gift-area { margin: 30px auto 0; max-width: 440px; background: #fff; border: 1px solid #e6dfd3; border-radius: 10px; padding: 26px; }
+.gift-area h2 { font-size: 24px; }
+.gift-box { position: relative; width: 120px; height: 110px; margin: 0 auto; }
+.gift-base { position: absolute; bottom: 0; left: 8px; width: 104px; height: 74px; background: #3b6fb6; border-radius: 4px; background-image: linear-gradient(90deg, transparent 44px, #e8c547 44px, #e8c547 60px, transparent 60px); }
+.gift-lid { position: absolute; top: 14px; left: 0; width: 120px; height: 24px; background: #2f5c99; border-radius: 4px; background-image: linear-gradient(90deg, transparent 52px, #e8c547 52px, #e8c547 68px, transparent 68px); transition: transform 0.5s ease-in; }
+.gift-box.open .gift-lid { transform: translate(30px, -60px) rotate(25deg); }
+.happy-mug { display: block; margin: 0 auto; animation: pop 0.6s cubic-bezier(0.3, 1.6, 0.5, 1); }
+.steam { fill: none; stroke: #c9c2b6; stroke-width: 3; stroke-linecap: round; }
+@keyframes pop { from { transform: scale(0.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 20; }
+.confetti i { position: absolute; top: -12px; width: 9px; height: 14px; border-radius: 2px; animation: fall linear forwards; }
+@keyframes fall { to { top: 105%; } }

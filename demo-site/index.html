@@ -30,7 +30,7 @@
         <input id="email" name="email" autocomplete="off" />
 
         <label for="phone">Phone</label>
-        <input id="phone" name="phone" autocomplete="off" />
+        <input id="phone" name="phone" autocomplete="off" placeholder="+44 123 456 7890" />
 
         <label for="postcode">Postcode</label>
         <input id="postcode" name="postcode" autocomplete="off" />
@@ -57,10 +57,41 @@
       <p class="tiny">Demo shop: no payment is taken.</p>
     </main>
 
-    <main id="done" class="page" hidden>
+    <main id="done" class="page done" hidden>
       <h1>Order placed</h1>
       <p class="sub" id="done-text"></p>
+      <p class="relief">Good news: you were charged only once.</p>
+
+      <section class="gift-area">
+        <div class="gift-box" id="gift-box" aria-hidden="true">
+          <div class="gift-lid"></div>
+          <div class="gift-base"></div>
+        </div>
+        <svg class="happy-mug" id="happy-mug" viewBox="0 0 140 130" width="170" height="158" role="img" aria-label="A small smiling mug" hidden>
+          <path class="steam" d="M48 22c-6-8 6-12 0-20M70 22c-6-8 6-12 0-20M92 22c-6-8 6-12 0-20" />
+          <path d="M104 52h8a18 18 0 0 1 0 36h-8" fill="none" stroke="#8a4b2a" stroke-width="9" />
+          <rect x="26" y="34" width="82" height="86" rx="14" fill="#c9805a" />
+          <circle cx="52" cy="70" r="5" fill="#2a2622" />
+          <circle cx="82" cy="70" r="5" fill="#2a2622" />
+          <circle cx="44" cy="86" r="6" fill="#f2a7a0" />
+          <circle cx="90" cy="86" r="6" fill="#f2a7a0" />
+          <path d="M54 88q13 14 26 0" fill="none" stroke="#2a2622" stroke-width="4" stroke-linecap="round" />
+        </svg>
+        <h2 id="gift-title">There is a gift in your box</h2>
+        <p class="sub" id="gift-text">We add one to every first order.</p>
+        <button class="buy" id="gift-open">Open your gift</button>
+      </section>
     </main>
+
+    <div id="alarm" class="alarm" role="alertdialog" aria-labelledby="alarm-title" hidden>
+      <div class="alarm-box">
+        <div class="alarm-icon" aria-hidden="true">!</div>
+        <h2 id="alarm-title">Payment failed</h2>
+        <p>Your card may have been charged twice. Do not close this page.</p>
+        <p class="alarm-timer">Your order will be cancelled in <strong id="alarm-count">15</strong> seconds.</p>
+        <button class="buy" id="alarm-retry">Try again</button>
+      </div>
+    </div>
 
     <div id="popup" class="popup" hidden>
       <div class="popup-box">
