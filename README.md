@@ -81,11 +81,11 @@ confidence. Without the key, the app works the same and nothing is sent to Anthr
 | Pulse, breathing, blink and expression numbers | Saved in the session file on this computer |
 | Screenshots of the tested page | Saved on this computer. Deleted with the session |
 | What the tester clicked | Saved as short labels ("Clicked Continue") |
-| What the tester typed | Never read, never saved. Only "typed in the Email field" is noted |
+| What the tester typed | Keystrokes and field values are never read. Only "typed in the Email field" is noted. But a screenshot shows the page as the tester saw it, so typed text can be visible in a screenshot |
 | Web addresses | Saved without the query string |
 | SmartSpectra sign-in | The SDK signs in to Presage with your API key. It has no offline mode |
 | SmartSpectra usage reports | Turned off (`enableTelemetry: false`) |
-| AI notes | Only when you press the button and confirm: screenshots of the page, page events and signal changes as text go to Anthropic. Never camera images |
+| AI notes | Only when you press the button and confirm: screenshots of the page, page events, signal changes as text, the task and the site address go to Anthropic. Never camera images |
 
 - The tester sees a consent screen before the camera starts and can stop at any time.
   "Stop and delete" removes everything from that test.

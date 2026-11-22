@@ -166,7 +166,7 @@ function showReport({ root, data, shotsUrl, api, onBack, banner, aiNotes }) {
                 {
                   onclick: async (e) => {
                     const ok = confirm(
-                      'Ask Claude to explain these moments?\n\nThis sends to Anthropic: the screenshots of the tested page for each moment, the page events, and the signal changes as text.\n\nIt never sends camera images or anything the tester typed.',
+                      'Ask Claude to explain these moments?\n\nThis sends to Anthropic: the screenshots of the tested page for each moment, the page events, the signal changes as text, the task and the site address.\n\nIt never sends camera images. A screenshot shows the page as the tester saw it, so it can show text that the tester typed into a form.',
                     );
                     if (!ok) return;
                     const button = e.currentTarget;

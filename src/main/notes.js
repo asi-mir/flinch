@@ -5,8 +5,9 @@
 // page events around that time and says what probably caused it. Code then checks every
 // note against the recorded evidence before it is shown.
 //
-// What is sent: screenshots of the tested page, the page events, and the signal changes
-// as short text. What is never sent: camera images, raw signal data, anything typed.
+// What is sent: screenshots of the tested page, the page events, the signal changes as
+// short text, the task and the site address. What is never sent: camera images and raw
+// signal data. A screenshot can show text that the tester typed into a form.
 const fs = require('node:fs');
 const path = require('node:path');
 const { Anthropic } = require('@anthropic-ai/sdk');
