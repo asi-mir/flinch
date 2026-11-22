@@ -216,7 +216,7 @@ function showReport({ root, data, shotsUrl, api, onBack, banner, aiNotes }) {
         h(
           'section',
           { class: 'card timeline-card' },
-          h('div', { class: 'timeline-wrap' }, canvas, h('p', { class: 'muted small legend' }, 'Numbered pins are reaction moments, green for a positive one. Orange ticks are errors and rage clicks. Grey bands are times when the measurement was not usable.')),
+          h('div', { class: 'timeline-wrap' }, canvas, h('p', { class: 'muted small legend' }, 'Numbered pins are reaction moments, green for a positive one. Shaded bands show how long each moment lasted. Orange ticks are errors and rage clicks. Grey bands are times when the measurement was not usable.')),
           h('div', { class: 'scrub' }, scrubImage, scrubLabel),
         ),
         h(
